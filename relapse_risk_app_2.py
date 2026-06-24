@@ -1,15 +1,7 @@
-"""
-OrthoRelapse-DSS — TRIPOD+AI Compliant Diagnostic Decision Support System (Advanced)
-=====================================================================================
-Developed by: Dr. Arafat Al-Jawry
-"""
-
-import json
 import math
 import altair as alt
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 
 # PAGE CONFIG
 st.set_page_config(
@@ -34,6 +26,139 @@ PALETTE = {
     "line": "#D8E1EC",
     "bg": "#F5F8FC",
 }
+
+CUSTOM_CSS = f"""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Inter:wght@400;500;600&display=swap');
+    html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; color: {PALETTE['ink']}; }}
+    .stApp {{ background: {PALETTE['bg']}; }}
+    #MainMenu, footer, header[data-testid="stHeader"] {{ visibility: hidden; }}
+    h1, h2, h3, h4 {{ font-family: 'Sora', sans-serif; color: {PALETTE['navy']}; letter-spacing: -0.01em; }}
+    .hero {{
+        background: linear-gradient(120deg, {PALETTE['navy']} 0%, {PALETTE['blue']} 55%, {PALETTE['teal']} 130%);
+        border-radius: 20px; padding: 30px 34px; color: #fff;
+        box-shadow: 0 14px 34px rgba(11,36,71,0.22); position: relative; overflow: hidden;
+    }}
+    .hero h1 {{ color: #fff; font-size: 2.0rem; margin: 0 0 6px 0; }}
+    .hero p {{ color: #DCE8F7; font-size: 1.02rem; margin: 0; }}
+    .hero .pill {{
+        display: inline-block; margin-top: 14px; padding: 6px 14px;
+        background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.25);
+        border-radius: 999px; font-size: 0.78rem; font-weight: 600; text-transform: uppercase;
+    }}
+    .card {{
+        background: #fff; border: 1px solid {PALETTE['line']}; border-radius: 16px; padding: 22px 24px;
+        box-shadow: 0 6px 18px rgba(16,42,67,0.05); height: 100%;
+    }}
+    .meter-wrap {{
+        background: #fff; border: 1px solid {PALETTE['line']}; border-radius: 16px;
+        padding: 26px 28px; box-shadow: 0 6px 18px rgba(16,42,67,0.05);
+    }}
+    .score-num {{ font-family: 'Sora'; font-size: 3.4rem; font-weight: 700; line-height: 1; }}
+    .score-sub {{ color: {PALETTE['muted']}; font-size: 0.9rem; }}
+    .track {{ position: relative; height: 18px; border-radius: 999px; margin: 18px 0 6px 0; background: #eee; }}
+    .track-fill {{ position: absolute; top: 0; left: 0; height: 18px; border-radius: 999px; }}
+    .scale {{ display: flex; justify-content: space-between; color: {PALETTE['muted']}; font-size: 0.74rem; }}
+    .tier-badge {{ display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 999px; font-weight: 700; }}
+    .dot {{ width: 11px; height: 11px; border-radius: 50%; }}
+    .section-h {{ display:flex; align-items:baseline; gap:12px; margin: 26px 0 10px 0; }}
+    .section-h h2 {{ margin:0; font-size:1.3rem; }}
+    .footer {{ margin-top: 34px; padding: 20px 4px; border-top: 1px solid {PALETTE['line']}; color: {PALETTE['muted']}; font-size: 0.82rem; text-align: center; }}
+</style>
+"""
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+
+# ML ENGINE
+INTERCEPT = -0.40
+COEF_AGE, REF_AGE = -0.030, 25.0
+COEF_LITTLE, REF_LITTLE = 0.180, 3.5
+COEF_DURATION, REF_DURATION = 0.020, 18.0
+
+SEX_CONTRIB = {"Male": 0.00, "Female": 0.15}
+EXTRACTION_CONTRIB = {"No": 0.00, "Yes": 0.45}
+MALOCCLUSION_CONTRIB = {"Mild": -0.40, "Moderate": 0.00, "Severe": 0.60}
+RETAINER_CONTRIB = {"Hawley Retainer": 0.25, "Vacuum-Formed Retainer": -0.25, "Bonded Lingual Wire": -0.70}
+
+def predict(features: dict):
+    contribs = [
+        {"feature": "Patient Age", "contribution": COEF_AGE * (features["age"] - REF_AGE)},
+        {"feature": "Patient Sex", "contribution": SEX_CONTRIB[features["sex"]]},
+        {"feature": "Extraction Status", "contribution": EXTRACTION_CONTRIB[features["extraction"]]},
+        {"feature": "Little's Irregularity Index", "contribution": COEF_LITTLE * (features["little"] - REF_LITTLE)},
+        {"feature": "Malocclusion Severity", "contribution": MALOCCLUSION_CONTRIB[features["malocclusion"]]},
+        {"feature": "Retainer Type", "contribution": RETAINER_CONTRIB[features["retainer"]]},
+        {"feature": "Treatment Duration", "contribution": COEF_DURATION * (features["duration"] - REF_DURATION)},
+    ]
+    logit = INTERCEPT + sum(c["contribution"] for c in contribs)
+    prob = (1.0 / (1.0 + math.exp(-logit))) * 100.0
+    tier = "Low Risk" if prob < 30.0 else "Moderate Risk" if prob < 60.0 else "High Risk"
+    return round(prob, 1), tier, contribs
+
+# SIDEBAR
+with st.sidebar:
+    st.markdown(f'<div style="font-family:\'Sora\'; color:{PALETTE["navy"]}; font-weight:700; font-size:1.1rem;">💡 Clinical Feature Panel</div>', unsafe_allow_html=True)
+    st.caption("Enter the patient metrics to compute risk.")
+    st.divider()
+    
+    age = st.slider("Patient Age (years)", 10, 50, 22)
+    sex = st.radio("Patient Sex", ["Male", "Female"], horizontal=True)
+    extraction = st.radio("Extraction Status", ["No", "Yes"], horizontal=True)
+    little = st.slider("Pre-treatment Crowding - Little's (mm)", 0.0, 15.0, 6.0, 0.5)
+    malocclusion = st.selectbox("Initial Malocclusion Severity", ["Mild", "Moderate", "Severe"], index=1)
+    retainer = st.selectbox("Proposed Retainer Type", ["Hawley Retainer", "Vacuum-Formed Retainer", "Bonded Lingual Wire"], index=1)
+    duration = st.slider("Treatment Duration (months)", 6, 36, 20)
+
+features = {"age": age, "sex": sex, "extraction": extraction, "little": little, "malocclusion": malocclusion, "retainer": retainer, "duration": duration}
+prob, tier, contributions = predict(features)
+
+# HERO HEADER
+st.markdown(f'<div class="hero"><h1>OrthoRelapse-DSS</h1><p>An explainable clinical decision-support prototype that estimates the probability of post-treatment orthodontic relapse.</p><span class="pill">TRIPOD+AI · Explainable AI · Prototype</span></div>', unsafe_allow_html=True)
+st.write("")
+
+# MAIN LAYOUT
+col_main, col_side = st.columns([1.6, 1])
+
+with col_main:
+    st.markdown('<div class="section-h"><h2>Explainable AI Layer</h2></div>', unsafe_allow_html=True)
+    
+    df = pd.DataFrame(contributions)
+    df["abs"] = df["contribution"].abs()
+    df = df.sort_values("abs", ascending=False).reset_index(drop=True)
+    df["direction"] = df["contribution"].apply(lambda v: "Increases risk" if v > 0 else "Reduces risk")
+    df["label"] = df["feature"]
+    
+    shap_chart = alt.Chart(df).mark_bar(cornerRadius=4, height=20).encode(
+        x=alt.X("contribution:Q", title="Log-Odds Contribution"),
+        y=alt.Y("label:N", sort=alt.SortField("abs", order="descending"), title=None),
+        color=alt.Color("direction:N", scale=alt.Scale(domain=["Increases risk", "Reduces risk"], range=[PALETTE["risk"], PALETTE["protect"]]), legend=None)
+    ).properties(height=220)
+    st.altair_chart(shap_chart + alt.Chart(pd.DataFrame({"z": [0]})).mark_rule(color=PALETTE["navy"]).encode(x="z:Q"), use_container_width=True)
+
+with col_side:
+    st.markdown('<div class="section-h"><h2>Risk Stratification</h2></div>', unsafe_allow_html=True)
+    
+    tstyle = {"Low Risk": {"color": PALETTE["teal"], "fill": PALETTE["teal_soft"]}, "Moderate Risk": {"color": PALETTE["amber"], "fill": "#FBF1DC"}, "High Risk": {"color": PALETTE["risk"], "fill": "#FBE6DF"}}[tier]
+    
+    st.markdown(f'<div class="meter-wrap"><span class="score-num" style="color:{tstyle["color"]};">{prob}%</span><span class="score-sub">&nbsp;estimated probability of relapse</span><div class="track"><div class="track-fill" style="width:{prob}%; background:{tstyle["color"]}; height:18px; border-radius:999px;"></div></div><div class="scale"><span>0%</span><span>Low</span><span>Moderate</span><span>High</span><span>100%</span></div></div>', unsafe_allow_html=True)
+    st.write("")
+    st.markdown(f'<div class="meter-wrap" style="background:{tstyle["fill"]}; border-color:{tstyle["color"]};"><div class="score-sub" style="font-weight:600; color:{PALETTE["navy"]};">Risk Category</div><div style="margin-top:8px;"><span class="tier-badge" style="background:#fff; color:{tstyle["color"]}; border:1px solid {tstyle["color"]};"><span class="dot" style="background:{tstyle["color"]};"></span>{tier}</span></div></div>', unsafe_allow_html=True)
+
+# --------------------------------------------------------------------------------------
+# FOOTER — WITH DR. ARAFAT'S SIGNATURE
+# --------------------------------------------------------------------------------------
+st.sidebar.markdown("---")
+st.sidebar.caption("👨‍⚕️ **Developed & Maintained by:**\n\nDr. Arafat Al-Jawry")
+
+st.markdown(
+    f"""
+    <div class="footer">
+        <b>OrthoRelapse-DSS — Diagnostic Decision Support System Prototype.</b><br>
+        Developed and Designed by <b>Dr. Arafat Al-Jawry</b>. <br>
+        TRIPOD+AI Compliant · For research and educational demonstration only. © 2026. All Rights Reserved.
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 CUSTOM_CSS = f"""
 <style>
