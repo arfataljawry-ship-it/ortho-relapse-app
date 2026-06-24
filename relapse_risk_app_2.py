@@ -540,13 +540,17 @@ with x2:
     st.altair_chart(lime_chart + rule2, use_container_width=True)
 
 # --------------------------------------------------------------------------------------
-# FOOTER
+# FOOTER — WITH DR. ARAFAT'S SIGNATURE
 # --------------------------------------------------------------------------------------
+st.sidebar.markdown("---")
+st.sidebar.caption("👨‍⚕️ **Developed & Maintained by:**\n\nDr. Arafat Al-Jawry")
+
 st.markdown(
     f"""
     <div class="footer">
-        <b>TRIPOD+AI Compliant Diagnostic Decision Support System — Prototype.</b><br>
-        For research and educational demonstration only. © OrthoRelapse-DSS.
+        <b>OrthoRelapse-DSS — Diagnostic Decision Support System Prototype.</b><br>
+        Developed and Designed by <b>Dr. Arafat Al-Jawry</b>. <br>
+        TRIPOD+AI Compliant · For research and educational demonstration only. © 2026. All Rights Reserved.
     </div>
     """,
     unsafe_allow_html=True,
